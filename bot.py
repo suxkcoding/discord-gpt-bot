@@ -49,10 +49,12 @@ def clean_bot_answer(answer: str) -> str:
 def chat_with_gpt(
     user: str,
     prompt: str,
-    max_tokens: int = 500,
-    use_history: bool = True
+    max_tokens: int = None,
+    use_history: bool = None
 ) -> str:
-    if use_history:
+    if max_tokens is None:
+        max_tokens = 200
+    if use_history is None or use_history == True:
         prompt = prompt_to_chat(user, prompt)
     print('prompt:', prompt)
     bot_response = openai.Completion.create(
@@ -91,6 +93,8 @@ async def on_message(message):
     if text.startswith('!chat '):
         prompt = text[6:]
         try:
+            # 여러 채널에서 다른 문맥을 갖고 싶다면
+            # user 가 아니라 채널을 포함한 f"{user}{message.channel}" 로 변경
             bot_answer = chat_with_gpt(user, prompt)
             await message.channel.send(f"> Your prompt is: {prompt}\nAnswer: {bot_answer}")
         except:
@@ -119,7 +123,9 @@ async def chat(context, prompt: str, max_length: int, refresh: str):
     await context.defer()
     try:
         user = context.author
-        use_history = (refresh or 'yes').startswith('y')
+        # 여러 채널에서 다른 문맥을 갖고 싶다면
+        # user 가 아니라 채널을 포함한 f"{user}{context.channel}" 로 변경
+        use_history = (refresh or 'no').startswith('n')
         bot_answer = chat_with_gpt(user, prompt, max_tokens=max_length, use_history=use_history)
         await context.respond(f"> Prompt: {prompt}\n{bot_answer}")
     except Exception as err:
