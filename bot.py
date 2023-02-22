@@ -24,6 +24,7 @@ def add_history(user: str, text: str, bot_answer: str):
     )
     history[user] = history[user][-9:] + [pair]
 
+
 def get_history(user: str) -> list:
     if not user in history:
         return []
@@ -41,17 +42,22 @@ def prompt_to_chat(user: str, prompt: str) -> str:
 
 def clean_bot_answer(answer: str) -> str:
     answer = answer.strip()
-    answer = re.sub(r"^[a-zA-Z+]: ", "", answer)
+    answer = re.sub(r"^(\w.+\:) ", "", answer)
     return answer
 
 
-def chat_with_gpt(user: str, prompt: str, max_tokens: int = 100) -> str:
+def chat_with_gpt(
+    user: str,
+    prompt: str,
+    max_tokens: int = 500,
+    use_history: bool = True
+) -> str:
+    if use_history:
+        prompt = prompt_to_chat(user, prompt)
     print('prompt:', prompt)
-    prompt_as_chat = prompt_to_chat(user, prompt)
-    print('prompt_as_chat:', prompt_as_chat)
     bot_response = openai.Completion.create(
         model="text-davinci-003",
-        prompt=prompt_as_chat,
+        prompt=prompt,
         max_tokens=max_tokens,
         temperature=0.25
     )
@@ -84,8 +90,11 @@ async def on_message(message):
     text = message.content
     if text.startswith('!chat '):
         prompt = text[6:]
-        bot_answer = chat_with_gpt(user, prompt)
-        await message.channel.send(f"> Your prompt is: {prompt}\nAnswer: {bot_answer}")
+        try:
+            bot_answer = chat_with_gpt(user, prompt)
+            await message.channel.send(f"> Your prompt is: {prompt}\nAnswer: {bot_answer}")
+        except:
+            await message.channel.send(f"> Your prompt is: {prompt}\nSorry, Failed to answer")
 
 
 @bot.slash_command(guild_ids=SERVER_IDS)
@@ -97,14 +106,26 @@ async def on_message(message):
 @option(
     name="max_length",
     type=int,
-    description="AI가 출력할 수 있는 최대 답변 길이. (기본값: 100)",
+    description="AI가 출력할 수 있는 최대 답변 길이. (기본값: 500)",
     required=False,
 )
-async def chat(context, prompt: str, max_length: int):
+@option(
+    name="refresh",
+    type=str,
+    description="대화를 새로 시작합니다. (yes or no)",
+    required=False,
+)
+async def chat(context, prompt: str, max_length: int, refresh: str):
     await context.defer()
-    user = context.author
-    bot_answer = chat_with_gpt(user, prompt, max_tokens=max_length or 100)
-    await context.respond(f"> Prompt: {prompt}\n{bot_answer}")
+    try:
+        user = context.author
+        use_history = (refresh or 'yes').startswith('y')
+        bot_answer = chat_with_gpt(user, prompt, max_tokens=max_length, use_history=use_history)
+        await context.respond(f"> Prompt: {prompt}\n{bot_answer}")
+    except Exception as err:
+        await context.respond(f"> Prompt: {prompt}\n" \
+                              f"Sorry, failed to answer\n" \
+                              f"> {str(err)}")
 
 
 def summarize_prompt(prompt: str):
@@ -148,19 +169,23 @@ def create_image_embed(title: str, description: str, url: str):
 )
 async def image(context, prompt: str, n: int, size: str):
     await context.defer()
-    print("Image prompt:", prompt)
-    response = openai.Image.create(
-        prompt=prompt,
-        n=n or 1,
-        size=size or "256x256"
-    )
-    data: list = response['data']
-    for index, image in enumerate(data):
-        title = f"Image generated #{index+1}"
-        embed = create_image_embed(title, prompt, image['url'])
-        await context.send('', embed=embed)
-    await context.respond(f"> Prompt: {prompt}")
+    try:
+        print("Image prompt:", prompt)
+        response = openai.Image.create(
+            prompt=prompt,
+            n=n or 1,
+            size=size or "256x256"
+        )
+        data: list = response['data']
+        for index, image in enumerate(data):
+            title = f"Image generated #{index+1}"
+            embed = create_image_embed(title, prompt, image['url'])
+            await context.send('', embed=embed)
+        await context.respond(f"> Prompt: {prompt}")
+    except Exception as err:
+        await context.respond(f"> Prompt: {prompt}\n" \
+                              f"Sorry, failed to answer\n" \
+                              f"> {str(err)}")
 
 
 bot.run(DISCORD_BOT_KEY)
-
